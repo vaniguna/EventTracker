@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tracker">
+<meta name="theme-color" content="#3b2f8f">
+<title>Tracker</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E">
+<style>
+:root{--bg:#f4f3f8;--card:#fff;--text:#1d1b26;--mut:#6a6878;--acc:#3b2f8f;--onacc:#fff;--red:#e0245e;--bd:#e3e1ec;
+box-sizing:border-box;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#14131a;--card:#1f1d29;--text:#f2f1f7;--mut:#9b99ab;--acc:#9a8cff;--onacc:#14131a;--bd:#302e3f}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#app{max-width:520px;margin:0 auto;padding:16px}
+h1{font-size:28px;margin:8px 0 14px;letter-spacing:-.02em}
+header{display:flex;align-items:center;gap:10px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mut{color:var(--mut);font-size:14px}
+.big{font-size:56px;font-weight:700;line-height:1;letter-spacing:-.03em}
+.dot{background:var(--red);color:#fff;font-size:12px;font-weight:700;min-width:22px;height:22px;padding:0 7px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center}
+button,input{font:inherit;color:inherit}
+input{background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;width:100%}
+label{display:flex;align-items:center;gap:8px}
+label input{width:4.5em}
+.btn{background:var(--acc);color:var(--onacc);border:0;border-radius:10px;padding:12px;font-weight:600;cursor:pointer}
+.btn.sec{background:transparent;color:var(--acc);border:1px solid var(--acc)}
+.btn.danger{background:transparent;color:var(--red);border:1px solid var(--red)}
+.link{background:none;border:0;color:var(--acc);padding:6px 0;font-weight:600;cursor:pointer;text-align:left}
+.entry{border-top:1px solid var(--bd);padding-top:8px}
+.x{background:none;border:0;color:var(--mut);font-size:18px;padding:4px 8px;cursor:pointer}
+.tap{cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const KEY='trackers.v1';
+let S={trackers:[]}, view='home', repMonth='';
+const shift=(k,n)=>{const [y,m]=k.split('-').map(Number);const d=new Date(y,m-1+n,1);return mkey(d.getFullYear(),d.getMonth())};
+const app=document.getElementById('app');
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const mkey=(y,m)=>y+'-'+pad(m+1);
+const curKey=()=>{const d=new Date();return mkey(d.getFullYear(),d.getMonth())};
+const prevKey=()=>{const d=new Date();return d.getMonth()?mkey(d.getFullYear(),d.getMonth()-1):mkey(d.getFullYear()-1,11)};
+const monthName=k=>{const [y,m]=k.split('-');return new Date(y,m-1,1).toLocaleString(undefined,{month:'long',year:'numeric'})};
+const fmt=s=>{const [y,m,d]=s.split('-');return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:'short',year:'numeric',month:'short',day:'numeric'})};
+const count=(t,k)=>t.entries.filter(e=>e.date.startsWith(k)).length;
+const ready=t=>new Date().getDate()>=t.reportDay&&!t.seen[prevKey()];
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=id=>document.getElementById(id);
+
+function load(){try{const r=localStorage.getItem(KEY);if(r)S=JSON.parse(r)}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){alert('Could not save. Export a backup and check your browser storage settings.')}}
+
+function badge(){
+  const n=S.trackers.filter(ready).length;
+  try{if(navigator.setAppBadge){n?navigator.setAppBadge(n):navigator.clearAppBadge()}}catch(e){}
+  return n;
+}
+
+function entries(t,k){
+  const l=t.entries.filter(e=>e.date.startsWith(k)).sort((a,b)=>b.date.localeCompare(a.date));
+  return l.map(e=>`<div class="entry"><div class="row"><b>${fmt(e.date)}</b><span><button class="x" aria-label="Edit note" data-act="note" data-id="${t.id}" data-eid="${e.id}">✎</button><button class="x" aria-label="Delete entry" data-act="del" data-id="${t.id}" data-eid="${e.id}">✕</button></span></div>${e.note?`<div class="mut">${esc(e.note)}</div>`:''}</div>`).join('')||'<div class="mut">No entries</div>';
+}
+
+function home(n){
+  app.innerHTML=`<header><h1>Trackers</h1>${n?`<span class="dot" title="Reports ready">${n}</span>`:''}</header>`+
+  (S.trackers.length?'':'<p class="mut">No trackers yet. Add your first one below.</p>')+
+  S.trackers.map(t=>`<div class="card">
+    <div class="tap" data-act="open" data-id="${t.id}"><div class="row"><b>${esc(t.name)}</b>${ready(t)?'<span class="dot">1</span>':''}</div>
+    <div class="mut">${count(t,curKey())} this month${ready(t)?'. '+monthName(prevKey())+' report is ready.':''}</div></div>
+    <input id="n-${t.id}" placeholder="Note (optional)" maxlength="200">
+    <button class="btn" data-act="logtoday" data-id="${t.id}">Log today</button>
+    <button class="btn sec" data-act="logother" data-id="${t.id}">Log another day</button>
+    <button class="link" data-act="report" data-id="${t.id}">View report</button></div>`).join('')+
+  `<div class="card"><b>Add a tracker</b>
+    <input id="nn" placeholder="Name, for example Extra dance class" maxlength="60">
+    <label class="mut">Report ready on day <input id="nd" type="number" min="1" max="28" value="1"> of each month</label>
+    <button class="btn" data-act="add">Add tracker</button></div>
+  <div class="card"><b>Backup</b>
+    <div class="mut">Your data is stored only in this browser. Export a copy now and then.</div>
+    <button class="btn sec" data-act="export">Export backup</button>
+    <button class="btn sec" data-act="import">Import backup</button>
+    <input type="file" id="imp" accept=".json,application/json" hidden></div>`;
+}
+
+function detail(t){
+  if(!t){view='home';return home(badge())}
+  const pk=prevKey(),ck=curKey(),rm=repMonth||pk,r=rm===pk&&ready(t);
+  const status=rm!==pk?(rm===ck?'This month so far.':''):r?'Report ready.':(new Date().getDate()<t.reportDay?'Ready on day '+t.reportDay+' of this month.':'Marked as read.');
+  const hist=[...new Set(t.entries.map(e=>e.date.slice(0,7)))].sort().reverse().map(k=>`<div class="row tap" data-act="month" data-m="${k}"><span>${monthName(k)}</span><b>${count(t,k)}</b></div>`).join('');
+  app.innerHTML=`<button class="link" data-act="home">‹ Back</button><h1>${esc(t.name)}</h1>
+  <div class="card"><b>Log an occurrence</b>
+    <input type="date" id="ld" value="${ymd(new Date())}">
+    <input id="ln" placeholder="Note (optional)" maxlength="200">
+    <button class="btn" data-act="log" data-id="${t.id}">Log it</button></div>
+  <div class="card" id="rep"><div class="row"><button class="x" aria-label="Previous month" data-act="month" data-m="${shift(rm,-1)}">‹</button>
+    <b>${monthName(rm)} report</b>${r?'<span class="dot">NEW</span>':'<span></span>'}<button class="x" aria-label="Next month" data-act="month" data-m="${shift(rm,1)}" ${rm>=ck?'disabled':''}>›</button></div>
+    <div class="big">${count(t,rm)}</div><div class="mut">${status}</div>
+    ${r?`<button class="btn" data-act="seen" data-id="${t.id}">Mark as read</button>`:''}
+    ${entries(t,rm)}</div>
+  <div class="card"><b>All months</b>${hist||'<div class="mut">No entries yet</div>'}</div>
+  <div class="card"><b>Settings</b>
+    <input id="sn" value="${esc(t.name)}" maxlength="60">
+    <label class="mut">Report ready on day <input id="sd" type="number" min="1" max="28" value="${t.reportDay}"> of each month</label>
+    <button class="btn sec" data-act="save" data-id="${t.id}">Save settings</button>
+    <button class="btn danger" data-act="delete" data-id="${t.id}">Delete tracker</button></div>`;
+}
+
+function render(){
+  const n=badge();
+  if(view==='home')home(n);else detail(S.trackers.find(t=>t.id===view));
+  window.scrollTo(0,0);
+}
+
+async function exportData(){
+  const blob=new Blob([JSON.stringify(S,null,1)],{type:'application/json'});
+  const f=new File([blob],'tracker-backup-'+ymd(new Date())+'.json',{type:'application/json'});
+  try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return}}
+  catch(e){if(e.name==='AbortError')return}
+  const u=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=u;a.download=f.name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
+}
+
+document.addEventListener('click',e=>{
+  const a=e.target.closest('[data-act]');if(!a)return;
+  const act=a.dataset.act,id=a.dataset.id,t=S.trackers.find(x=>x.id===id);
+  if(act==='export'){exportData();return}
+  if(act==='import'){$('imp').click();return}
+  if(act==='open'){view=id;repMonth=prevKey()}
+  else if(act==='report'){view=id;repMonth=prevKey();render();$('rep').scrollIntoView();return}
+  else if(act==='month'){repMonth=a.dataset.m;render();$('rep').scrollIntoView({block:'center'});return}
+  else if(act==='home')view='home';
+  else if(act==='add'){
+    const nm=$('nn').value.trim();if(!nm){$('nn').focus();return}
+    const d=Math.min(28,Math.max(1,parseInt($('nd').value)||1));
+    S.trackers.push({id:uid(),name:nm,reportDay:d,seen:{},entries:[]});
+  }
+  else if(!t)return;
+  else if(act==='logtoday')t.entries.push({id:uid(),date:ymd(new Date()),note:$('n-'+id).value.trim()});
+  else if(act==='logother'){view=id;repMonth=prevKey();render();$('ld').scrollIntoView({block:'center'});$('ld').focus();return}
+  else if(act==='log'){const d=$('ld').value;if(!d)return;t.entries.push({id:uid(),date:d,note:$('ln').value.trim()})}
+  else if(act==='note'){const en=t.entries.find(x=>x.id===a.dataset.eid);if(!en)return;const v=prompt('Note for '+fmt(en.date),en.note||'');if(v===null)return;en.note=v.trim()}
+  else if(act==='del'){if(!confirm('Delete this entry?'))return;t.entries=t.entries.filter(x=>x.id!==a.dataset.eid)}
+  else if(act==='seen')t.seen[prevKey()]=true;
+  else if(act==='save'){
+    const nm=$('sn').value.trim();if(nm)t.name=nm;
+    t.reportDay=Math.min(28,Math.max(1,parseInt($('sd').value)||1));
+  }
+  else if(act==='delete'){if(!confirm('Delete "'+t.name+'" and all its entries?'))return;S.trackers=S.trackers.filter(x=>x.id!==id);view='home'}
+  save();render();
+});
+
+document.addEventListener('change',e=>{
+  if(e.target.id!=='imp'||!e.target.files[0])return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const d=JSON.parse(rd.result);
+      if(!d||!Array.isArray(d.trackers))throw 0;
+      if(!confirm('Replace all current data with this backup?'))return;
+      S=d;save();view='home';render();
+    }catch(x){alert('That file is not a valid backup.')}
+  };
+  rd.readAsText(e.target.files[0]);
+});
+
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)render()});
+load();render();
+</script>
+</body>
+</html>
